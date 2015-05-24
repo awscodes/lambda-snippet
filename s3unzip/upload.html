@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta charset="utf-8">
+<title>AWS Lambda Unzip</title>
+<meta name="HandheldFriendly" content="true">
+<meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+<meta name="viewport"
+	content="width=device-width, initial-scale=1, maximum-scale=1">
+<!-- Import CSS -->
+<link rel="stylesheet"
+	href="style.css">
+
+<script src="aws-sdk-2.0.29.min.js"></script>
+<script src="jquery.min.js"></script>
+<script src="sha3.js"></script>
+<script>
+	var s3BucketName = "lambda-passwordauth";
+	var s3RegionName = "us-west-2";
+	var cognitoParams = {
+		AccountId : "557609899565",
+		RoleArn : "arn:aws:iam::557609899565:role/Cognito_passwordauthUnauth_DefaultRole",
+		IdentityPoolId : "us-east-1:da106557-daf1-47e1-b245-32ae9d66d374"
+	};
+	var uuid;
+	var password;
+	function uploadFile() {
+		disableUploadButton();
+		password = $('#password').val();
+		if (password.length == 0) {
+			alert("No password!");
+			enableUploaButton();
+		}
+		uuid = new Date().getTime()+"-"+generateuuid();
+		AWS.config.region = 'us-east-1';
+		AWS.config.credentials = new AWS.CognitoIdentityCredentials(
+				cognitoParams);
+		AWS.config.credentials.get(function(err) {
+			if (!err) {
+				beginUpload();
+			} else {
+				alert(err);
+			}
+		});
+	}
+	function beginUpload() {
+		$('#putButton').text('Uploading...');
+		var fileNum = document.getElementById('fileToUpload').files.length;
+		var s3 = new AWS.S3({
+			region : s3RegionName,
+			maxRetries : 100
+		});
+		var counterFunction = createCounter(fileNum, uploadCommand);
+		for (var i = 0; i < fileNum; i++) {
+			var file = document.getElementById('fileToUpload').files[i];
+			if (file) {
+				var fileName = file.name;
+				var key = "upload/" + uuid + "/" + fileName;
+				s3.putObject({
+					Bucket : s3BucketName,
+					Key : key,
+					ContentType : file.type,
+					Body : file
+				}, function(err, data) {
+					if (data !== null) {
+						counterFunction();
+					} else {
+						alert("Error: " + err);
+						enableUploaButton();
+					}
+				});
+			} else {
+				counterFunction();
+			}
+		}
+	}
+	function uploadCommand() {
+		var s3 = new AWS.S3({
+			region : s3RegionName,
+			maxRetries : 100
+		});
+		var key = "upload/" + uuid + "/request.json";
+		var data = '{"password":"' + password + '"}';
+		s3.putObject({
+			Bucket : s3BucketName,
+			Key : key,
+			ContentType : "plane/text",
+			Body : data
+		}, function(err, data) {
+			if (data !== null) {
+				waitForResult();
+			} else {
+				alert("Error: " + err);
+				enableUploaButton();
+			}
+		});
+	}
+	function waitForResult() {
+		$('#putButton').text('Wating response...');
+		var passwordHash = CryptoJS.SHA3(password).toString(CryptoJS.enc.Hex);
+		var path = "/download/" + uuid + "/" + passwordHash + "/archive.zip";
+		var f = function() {
+			$.ajax({
+				type : 'HEAD',
+				url : path,
+				success : function(data, status, xhr) {
+					var downloadURL = "https://" + location.host
+							+ "/download.html?id=" + uuid;
+					$('#resultPanel').append(
+							'<h2><a href="'+downloadURL+'">'
+									+ downloadURL + '</a></h2>');
+					enableUploaButton();
+				},
+				error : function(status, xhr, error) {
+					setTimeout(f, 1000);
+				}
+			});
+		}
+		f();
+	}
+	function disableUploadButton() {
+		$("#putButton").attr('disabled', true);
+		$('#putButton').text('Disable upload....');
+	}
+	function enableUploaButton() {
+		$('#putButton').attr('disabled', false);
+		$('#putButton').removeAttr('disabled');
+		$('#putButton').text('Disabled');
+	}
+	function generateuuid() {
+		var s4 = function() {
+			return Math.floor((1 + Math.random()) * 0x10000).toString(16)
+					.substring(1);
+		}
+		return s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4()
+				+ s4() + s4();
+	}
+	function createCounter(length, callback) {
+		var counter = 0;
+		return function() {
+			if (++counter == length) {
+				callback();
+			}
+		}
+	}
+</script>
+</head>
+<body class="home color-2">
+	<div id="header">
+		<div class="container">
+
+			<div class="row">
+
+				<i id="nav-button" class="icon-circle-arrow-down"></i>
+				<h2 id="logo">
+					AWS Lambda <span class="highlight"> Upload</span></a>
+				</h2>
+
+
+			</div>
+		</div>
+	</div>
+	<!-- End Header -->
+	<div class="container">　</div>
+	<!-- Services Section -->
+	<!-- class section-alt is to give a different color please edit css/style.css to change the color -->
+	<div class="section section-alt" id="services">
+		<div class="container">
+			<div class="content">
+				<div class="row">
+					<div class="title">
+						<h2>Upload</h2>
+						<div class="hr hr-small hr-center"></div>
+					</div>
+				</div>
+				<div class="row">
+					<div class="span4 i-block">
+						<h3></h3>
+						<p></p>
+					</div>
+					<div class="span4 i-block">
+						<h3>Upload files</h3>
+						<p>
+						<p>
+							<input type="file" id="fileToUpload" multiple />
+						</p>
+						<p>
+							Password：<input type="password" id="password" />
+						</p>
+						<p>
+							<button id="putButton" onclick="uploadFile()">Upload</button>
+						</p>
+						<div id="resultPanel"></div>
+						</p>
+					</div>
+					<div class="span4 i-block">
+						<h3></h3>
+						<p></p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<!-- End Services Section -->
+	<!-- End Contact Section -->
+</body>
+</center>
+</html>
